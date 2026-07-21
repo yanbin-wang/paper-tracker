@@ -2,6 +2,8 @@
 
 This project reads a CSTNET mailbox through **read-only IMAP**, identifies submission-related messages, stores private details locally, and publishes only a sanitized dataset to GitHub Pages.
 
+The initial scan checks the latest 30 days of the inbox. Later runs process only newly arrived messages.
+
 ## Privacy model
 
 - `private/tracker.sqlite3` contains the local index and is ignored by Git.
