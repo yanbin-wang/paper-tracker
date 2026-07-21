@@ -1,0 +1,9 @@
+.env
+config.json
+config.toml
+.venv/
+__pycache__/
+*.pyc
+private/
+tracker.log
+.DS_Store
