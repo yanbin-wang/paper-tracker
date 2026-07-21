@@ -41,6 +41,16 @@ class TrackerTests(unittest.TestCase):
         self.assertEqual(result.status, "submitted")
         self.assertEqual(result.venue, "Pattern Recognition")
 
+    def test_folded_review_invitation_is_ignored(self):
+        raw = b"""From: Blockchains Editorial Office <blockchains@mdpi.com>\nSubject: [Blockchains] Reminder for Invitation to\n Review for Blockchains\n\nTitle: Breaking the Peg, or Not\nPlease view your submission in the review system.\n"""
+        self.assertIsNone(parse_message(6, raw))
+
+    def test_editorial_sender_supplies_complete_venue(self):
+        raw = b"""From: IEEE Transactions on Information Forensics and Security <no-reply@researchexchange.com>\nSubject: Action Recommended: View your submission to IEEE Transactions on\n Information Forensics and Security\n\nTitle: Beyond Fixed Fusion for Phishing Detection\n"""
+        result = parse_message(7, raw)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.venue, "IEEE Transactions on Information Forensics and Security")
+
 
 if __name__ == "__main__":
     unittest.main()
