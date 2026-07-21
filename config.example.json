@@ -1,0 +1,20 @@
+{
+  "mail": {
+    "host": "mail.cstnet.cn",
+    "port": 993,
+    "username": "wangyanbin15@mails.ucas.ac.cn",
+    "mailbox": "INBOX",
+    "since": "2023-01-01",
+    "keychain_service": "cstnet-paper-tracker"
+  },
+  "public": {
+    "site_title": "Yanbin Wang · Submission Tracker",
+    "site_subtitle": "Selected research manuscripts and submission progress",
+    "fields": ["title", "venue", "status", "role", "submitted_month", "updated_date", "topic"],
+    "show_rejected": false
+  },
+  "git": {
+    "remote": "",
+    "branch": "main"
+  }
+}
