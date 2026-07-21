@@ -88,6 +88,20 @@ def decode_header(value: str | None) -> str:
     return "".join(chunks).strip()
 
 
+def raw_header(msg: Message, name: str) -> str:
+    """Return a header without invoking strict structured-header parsing.
+
+    Some real-world mail systems emit malformed Message-ID values that crash
+    Python 3.9's header registry. ``raw_items`` preserves those values as text,
+    which is sufficient for indexing and display.
+    """
+    wanted = name.casefold()
+    for header_name, value in msg.raw_items():
+        if header_name.casefold() == wanted:
+            return value.strip()
+    return ""
+
+
 def message_text(msg: Message) -> str:
     chunks: list[str] = []
     parts = msg.walk() if msg.is_multipart() else [msg]
@@ -135,8 +149,8 @@ def infer_topic(title: str) -> str:
 
 def parse_message(uid: int, raw: bytes) -> ParsedMail | None:
     msg = email.message_from_bytes(raw, policy=email.policy.default)
-    subject = decode_header(msg.get("Subject"))
-    sender = decode_header(msg.get("From"))
+    subject = decode_header(raw_header(msg, "Subject"))
+    sender = decode_header(raw_header(msg, "From"))
     body = message_text(msg)
     combined = f"{subject}\n{body}"
     low = combined.lower()
@@ -178,7 +192,11 @@ def parse_message(uid: int, raw: bytes) -> ParsedMail | None:
             break
     role = "co-author" if re.search(r"co-author|coauthorship|co-authorship|verify your contribution|listed you as", low) else "submitting author"
 
-    parsed_date = email.utils.parsedate_to_datetime(msg.get("Date")) if msg.get("Date") else None
+    raw_date = raw_header(msg, "Date")
+    try:
+        parsed_date = email.utils.parsedate_to_datetime(raw_date) if raw_date else None
+    except (TypeError, ValueError, OverflowError):
+        parsed_date = None
     if parsed_date:
         parsed_date = parsed_date.astimezone(dt.timezone.utc)
         date = parsed_date.date().isoformat()
@@ -189,7 +207,7 @@ def parse_message(uid: int, raw: bytes) -> ParsedMail | None:
     fingerprint = hashlib.sha256((base_id(manuscript_id) or norm).encode()).hexdigest()[:24]
     return ParsedMail(
         uid=uid,
-        message_id=str(msg.get("Message-ID") or ""),
+        message_id=raw_header(msg, "Message-ID"),
         date=date,
         subject=subject,
         sender=sender,
