@@ -38,7 +38,7 @@ STATUS_RULES = [
 ]
 
 REVIEWER_MAIL = re.compile(
-    r"review request|invitation to review|review invitation|review request reminder|"
+    r"review\s+request|invitation\s+to\s+review|review\s+invitation|review\s+request\s+reminder|"
     r"reviewer notification|independent review report|agreeing to review|"
     r"thank you for reviewing|review forum|\bfor review\b",
     re.I,
@@ -48,7 +48,8 @@ AUTHOR_MAIL = re.compile(
     r"confirm(?:ing)? (?:your )?(?:co-?authorship|submission)|verify your contribution|"
     r"your submission|manuscript .+ assigned to editor|production has begun on your article|"
     r"article processing charge|listed you as (?:an? )?(?:author|co-?author)|"
-    r"thank you for submitting (?:your )?(?:manuscript|article)",
+    r"thank you for submitting (?:your )?(?:manuscript|article)|"
+    r"your pdf has been built|action recommended:\s*view\s+your submission",
     re.I,
 )
 
@@ -176,17 +177,21 @@ def infer_status(subject: str, body: str) -> str:
 
 
 def clean_venue(venue: str, sender: str, subject: str, manuscript_id: str) -> str:
-    production = re.search(r"in ([^\[\]\r\n]+)$", subject, re.I)
+    production = re.search(r"production has begun.+? in ([^\[\]\r\n]+)$", subject, re.I)
     if production:
         return clean_title(production.group(1))
     if manuscript_id.upper().startswith("T-IFS-"):
         return "IEEE Transactions on Information Forensics and Security"
 
+    display_name = email.utils.parseaddr(sender)[0].strip(' "')
+    if re.search(r"editorialmanager\.com|manuscriptcentral\.com|researchexchange\.com", sender, re.I):
+        if display_name:
+            return display_name.replace("&", "and")
+
     invalid = re.search(r"@|username=|mailbox|/data|article transfer|peer review service|apc support", venue, re.I)
     if venue and not invalid:
         return venue.replace("&", "and")
 
-    display_name = email.utils.parseaddr(sender)[0].strip(' "')
     if display_name and not re.search(r"peer review service|editorial office|apc support", display_name, re.I):
         return display_name.replace("&", "and")
     return ""
@@ -202,7 +207,8 @@ def parse_message(uid: int, raw: bytes) -> ParsedMail | None:
 
     if REVIEWER_MAIL.search(subject) or re.search(r"call for papers|submit your manuscript to|special issue invitation", low):
         return None
-    if not AUTHOR_MAIL.search(combined):
+    explicit_body_author = re.search(r"listed you as (?:an? )?(?:author|co-?author)|you are listed as a co-?author", body, re.I)
+    if not AUTHOR_MAIL.search(subject) and not explicit_body_author:
         return None
 
     title = ""
