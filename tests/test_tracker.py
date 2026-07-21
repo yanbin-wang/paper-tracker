@@ -30,6 +30,17 @@ class TrackerTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result.message_id, "[broken-id@microsoft.com]>")
 
+    def test_reviewer_request_is_not_an_authored_submission(self):
+        raw = b"""From: Data Editorial Office <data@mdpi.com>\nSubject: [Data] Manuscript ID: data-4423166 - Review Request Reminder\n\nTitle: A paper written by somebody else\nDecision: rejected\n"""
+        self.assertIsNone(parse_message(4, raw))
+
+    def test_submission_confirmation_is_not_misclassified_as_accepted(self):
+        raw = b"""From: Pattern Recognition <em@editorialmanager.com>\nDate: Sun, 12 Jul 2026 02:05:32 +0800\nSubject: PR-D-26-09497 - Confirming your submission to Pattern Recognition\n\nJournal: Pattern Recognition\nTitle: Distilling Large Language Models into Lightweight Detectors\nManuscript Number: PR-D-26-09497\nPlease confirm that you accept the terms.\n"""
+        result = parse_message(5, raw)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.status, "submitted")
+        self.assertEqual(result.venue, "Pattern Recognition")
+
 
 if __name__ == "__main__":
     unittest.main()
