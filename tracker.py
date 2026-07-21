@@ -1,0 +1,331 @@
+#!/usr/bin/env python3
+"""Read CSTNET mail through read-only IMAP and build a privacy-safe Pages site."""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import email
+import email.header
+import email.policy
+import hashlib
+import html
+import imaplib
+import json
+import os
+import re
+import sqlite3
+import subprocess
+import sys
+from dataclasses import asdict, dataclass
+from email.message import Message
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+PRIVATE = ROOT / "private"
+DB_PATH = PRIVATE / "tracker.sqlite3"
+CONFIG_PATH = ROOT / "config.json"
+DOCS = ROOT / "docs"
+
+STATUS_RULES = [
+    ("accepted", r"accepted for publication|accept(?:ed|ance)\b|正式录用|录用通知"),
+    ("minor revision", r"minor revision|小修"),
+    ("major revision", r"major revision|大修"),
+    ("rejected", r"reject(?:ed|ion)|decline(?:d)?|拒稿|未予录用"),
+    ("under review", r"under review|with editor|editor assigned|送审|审稿中"),
+    ("submitted", r"confirming (?:your )?submission|manuscript received|receipt of manuscript|submission notification|co-authorship|verify your contribution|view your submission|thank you for submitting"),
+]
+
+TITLE_PATTERNS = [
+    r"(?:submission |manuscript )?title\s*[:：]\s*[\"“]?(.*?)[\"”]?(?:\r?\n|manuscript id|article type|journal\s*:|$)",
+    r"co-author on the manuscript\s*[\"“](.*?)[\"”]",
+    r"submission entitled\s*[\"“](.*?)[\"”]",
+    r"received your article\s*[\"“](.*?)[\"”]",
+    r"manuscript\s*[\"“](.*?)[\"”]\s*\(reference number",
+]
+
+ID_PATTERNS = [
+    r"(?:manuscript|submission|reference)\s*(?:id|number|no\.?|#)\s*[:：]?\s*([A-Z0-9][A-Z0-9._/-]{4,})",
+    r"\b([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-D-\d{2}-\d+(?:R\d+)?)\b",
+]
+
+VENUE_PATTERN = re.compile(r"(?:journal|submitted to|submission to)\s*[:：]?\s*([^\n\r.]{3,100})", re.I)
+
+
+@dataclass
+class ParsedMail:
+    uid: int
+    message_id: str
+    date: str
+    subject: str
+    sender: str
+    title: str
+    venue: str
+    manuscript_id: str
+    base_manuscript_id: str
+    status: str
+    role: str
+    topic: str
+    fingerprint: str
+
+
+def load_config() -> dict:
+    if not CONFIG_PATH.exists():
+        raise SystemExit("Missing config.json; copy config.example.json first.")
+    with CONFIG_PATH.open("r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def decode_header(value: str | None) -> str:
+    if not value:
+        return ""
+    chunks = []
+    for part, charset in email.header.decode_header(value):
+        if isinstance(part, bytes):
+            chunks.append(part.decode(charset or "utf-8", errors="replace"))
+        else:
+            chunks.append(part)
+    return "".join(chunks).strip()
+
+
+def message_text(msg: Message) -> str:
+    chunks: list[str] = []
+    parts = msg.walk() if msg.is_multipart() else [msg]
+    for part in parts:
+        if part.get_content_maintype() == "multipart" or part.get_filename():
+            continue
+        if part.get_content_type() not in {"text/plain", "text/html"}:
+            continue
+        try:
+            text = part.get_content()
+        except Exception:
+            payload = part.get_payload(decode=True) or b""
+            text = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+        if part.get_content_type() == "text/html":
+            text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", text)
+            text = re.sub(r"(?s)<[^>]+>", "\n", text)
+            text = html.unescape(text)
+        chunks.append(text)
+    return re.sub(r"[\t ]+", " ", "\n".join(chunks))
+
+
+def clean_title(value: str) -> str:
+    value = re.sub(r"\s+", " ", value).strip(" \t\r\n\"'“”:-")
+    return value[:500]
+
+
+def normalize_title(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def base_id(value: str) -> str:
+    return re.sub(r"(?:[._-]?R\d+)$", "", value, flags=re.I).upper()
+
+
+def infer_topic(title: str) -> str:
+    low = title.lower()
+    if re.search(r"protein|rna|antibody|spatial|transcriptom|omics|biomedical|bioinform", low):
+        return "Bioinformatics"
+    if re.search(r"url|phishing|fraud|blockchain|ethereum|vulnerab|smart contract|malicious|security", low):
+        return "Security"
+    if re.search(r"teaching|education|student", low):
+        return "Education AI"
+    return "Other"
+
+
+def parse_message(uid: int, raw: bytes) -> ParsedMail | None:
+    msg = email.message_from_bytes(raw, policy=email.policy.default)
+    subject = decode_header(msg.get("Subject"))
+    sender = decode_header(msg.get("From"))
+    body = message_text(msg)
+    combined = f"{subject}\n{body}"
+    low = combined.lower()
+
+    if re.search(r"invitation to review|review invitation|call for papers|submit your manuscript to|special issue invitation", low):
+        return None
+    if not any(re.search(pattern, low, re.I) for _, pattern in STATUS_RULES):
+        return None
+
+    title = ""
+    for pattern in TITLE_PATTERNS:
+        match = re.search(pattern, combined, re.I | re.S)
+        if match:
+            title = clean_title(match.group(1))
+            if 8 <= len(title) <= 500:
+                break
+            title = ""
+    if not title:
+        return None
+
+    manuscript_id = ""
+    for pattern in ID_PATTERNS:
+        match = re.search(pattern, combined, re.I)
+        if match:
+            manuscript_id = match.group(1).strip(".,;:()[] ")
+            break
+
+    venue = ""
+    match = VENUE_PATTERN.search(combined)
+    if match:
+        venue = clean_title(match.group(1))
+    if not venue:
+        venue = re.sub(r"[\"<>].*", "", sender).strip()[:150]
+
+    status = "submitted"
+    for name, pattern in STATUS_RULES:
+        if re.search(pattern, low, re.I):
+            status = name
+            break
+    role = "co-author" if re.search(r"co-author|coauthorship|co-authorship|verify your contribution|listed you as", low) else "submitting author"
+
+    parsed_date = email.utils.parsedate_to_datetime(msg.get("Date")) if msg.get("Date") else None
+    if parsed_date:
+        parsed_date = parsed_date.astimezone(dt.timezone.utc)
+        date = parsed_date.date().isoformat()
+    else:
+        date = dt.date.today().isoformat()
+
+    norm = normalize_title(title)
+    fingerprint = hashlib.sha256((base_id(manuscript_id) or norm).encode()).hexdigest()[:24]
+    return ParsedMail(
+        uid=uid,
+        message_id=str(msg.get("Message-ID") or ""),
+        date=date,
+        subject=subject,
+        sender=sender,
+        title=title,
+        venue=venue,
+        manuscript_id=manuscript_id,
+        base_manuscript_id=base_id(manuscript_id),
+        status=status,
+        role=role,
+        topic=infer_topic(title),
+        fingerprint=fingerprint,
+    )
+
+
+def connect(cfg: dict) -> imaplib.IMAP4_SSL:
+    password = os.environ.get("CSTNET_IMAP_PASSWORD", "")
+    if not password and sys.platform == "darwin":
+        service = cfg["mail"].get("keychain_service", "cstnet-paper-tracker")
+        result = subprocess.run(
+            ["security", "find-generic-password", "-s", service, "-w"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        password = result.stdout.strip()
+    if not password:
+        raise SystemExit("No IMAP password found. Store a CSTNET client-specific password in Keychain first.")
+    client = imaplib.IMAP4_SSL(cfg["mail"]["host"], int(cfg["mail"]["port"]))
+    client.login(cfg["mail"]["username"], password)
+    return client
+
+
+def open_db() -> sqlite3.Connection:
+    PRIVATE.mkdir(exist_ok=True)
+    db = sqlite3.connect(DB_PATH)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS messages (
+          uid INTEGER PRIMARY KEY, message_id TEXT, received_date TEXT,
+          subject TEXT, sender TEXT, parsed_json TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS submissions (
+          fingerprint TEXT PRIMARY KEY, title TEXT NOT NULL, venue TEXT,
+          manuscript_id TEXT, base_manuscript_id TEXT, status TEXT,
+          role TEXT, topic TEXT, submitted_date TEXT, updated_date TEXT
+        );
+        """
+    )
+    return db
+
+
+def scan(cfg: dict) -> int:
+    db = open_db()
+    last_uid = db.execute("SELECT COALESCE(MAX(uid), 0) FROM messages").fetchone()[0]
+    client = connect(cfg)
+    try:
+        status, _ = client.select(cfg["mail"].get("mailbox", "INBOX"), readonly=True)
+        if status != "OK":
+            raise RuntimeError("Could not open mailbox in read-only mode")
+        criterion = f"UID {last_uid + 1}:*" if last_uid else f'SINCE "{dt.date.fromisoformat(cfg["mail"]["since"]).strftime("%d-%b-%Y")}"'
+        status, data = client.uid("search", None, criterion)
+        if status != "OK":
+            raise RuntimeError("IMAP search failed")
+        count = 0
+        for uid_raw in data[0].split():
+            uid = int(uid_raw)
+            status, fetched = client.uid("fetch", str(uid), "(RFC822)")
+            if status != "OK" or not fetched or not isinstance(fetched[0], tuple):
+                continue
+            parsed = parse_message(uid, fetched[0][1])
+            if not parsed:
+                db.execute(
+                    "INSERT OR IGNORE INTO messages VALUES (?, '', '', '', '', ?)",
+                    (uid, json.dumps({"ignored": True})),
+                )
+                continue
+            payload = json.dumps(asdict(parsed), ensure_ascii=False)
+            db.execute(
+                "INSERT OR REPLACE INTO messages VALUES (?, ?, ?, ?, ?, ?)",
+                (uid, parsed.message_id, parsed.date, parsed.subject, parsed.sender, payload),
+            )
+            existing = db.execute("SELECT submitted_date FROM submissions WHERE fingerprint=?", (parsed.fingerprint,)).fetchone()
+            submitted = min(existing[0], parsed.date) if existing else parsed.date
+            db.execute(
+                """INSERT OR REPLACE INTO submissions
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (parsed.fingerprint, parsed.title, parsed.venue, parsed.manuscript_id,
+                 parsed.base_manuscript_id, parsed.status, parsed.role, parsed.topic,
+                 submitted, parsed.date),
+            )
+            count += 1
+        db.commit()
+        return count
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
+
+
+def export_public(cfg: dict) -> int:
+    db = open_db()
+    rows = db.execute(
+        """SELECT title, venue, status, role, topic, submitted_date, updated_date
+        FROM submissions ORDER BY updated_date DESC, title"""
+    ).fetchall()
+    show_rejected = cfg.get("public", {}).get("show_rejected", False)
+    items = []
+    for title, venue, status, role, topic, submitted, updated in rows:
+        if status == "rejected" and not show_rejected:
+            continue
+        items.append({
+            "title": title,
+            "venue": venue,
+            "status": status,
+            "role": role,
+            "topic": topic,
+            "submitted_month": submitted[:7],
+            "updated_date": updated,
+        })
+    DOCS.mkdir(exist_ok=True)
+    (DOCS / "data.json").write_text(json.dumps(items, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return len(items)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", choices=["scan", "export", "run"])
+    args = parser.parse_args()
+    cfg = load_config()
+    if args.command in {"scan", "run"}:
+        print(f"Parsed {scan(cfg)} new submission-related messages")
+    if args.command in {"export", "run"}:
+        print(f"Exported {export_public(cfg)} public submissions")
+
+
+if __name__ == "__main__":
+    main()
