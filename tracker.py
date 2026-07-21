@@ -17,6 +17,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import time
 from dataclasses import asdict, dataclass
 from email.message import Message
 from pathlib import Path
@@ -268,12 +269,24 @@ def scan(cfg: dict) -> int:
         status, _ = client.select(cfg["mail"].get("mailbox", "INBOX"), readonly=True)
         if status != "OK":
             raise RuntimeError("Could not open mailbox in read-only mode")
-        criterion = f"UID {last_uid + 1}:*" if last_uid else f'SINCE "{dt.date.fromisoformat(cfg["mail"]["since"]).strftime("%d-%b-%Y")}"'
+        if last_uid:
+            criterion = f"UID {last_uid + 1}:*"
+        else:
+            lookback_days = int(cfg["mail"].get("lookback_days", 180))
+            since = dt.date.today() - dt.timedelta(days=lookback_days)
+            criterion = f'SINCE "{since.strftime("%d-%b-%Y")}"'
+            print(f"First scan: checking INBOX messages from {since} onward ({lookback_days} days).", flush=True)
         status, data = client.uid("search", None, criterion)
         if status != "OK":
             raise RuntimeError("IMAP search failed")
+        uids = data[0].split()
+        total = len(uids)
+        print(f"Found {total} messages to inspect.", flush=True)
+        if not total:
+            return 0
+        started = time.monotonic()
         count = 0
-        for uid_raw in data[0].split():
+        for index, uid_raw in enumerate(uids, start=1):
             uid = int(uid_raw)
             status, fetched = client.uid("fetch", str(uid), "(RFC822)")
             if status != "OK" or not fetched or not isinstance(fetched[0], tuple):
@@ -284,22 +297,34 @@ def scan(cfg: dict) -> int:
                     "INSERT OR IGNORE INTO messages VALUES (?, '', '', '', '', ?)",
                     (uid, json.dumps({"ignored": True})),
                 )
-                continue
-            payload = json.dumps(asdict(parsed), ensure_ascii=False)
-            db.execute(
-                "INSERT OR REPLACE INTO messages VALUES (?, ?, ?, ?, ?, ?)",
-                (uid, parsed.message_id, parsed.date, parsed.subject, parsed.sender, payload),
-            )
-            existing = db.execute("SELECT submitted_date FROM submissions WHERE fingerprint=?", (parsed.fingerprint,)).fetchone()
-            submitted = min(existing[0], parsed.date) if existing else parsed.date
-            db.execute(
-                """INSERT OR REPLACE INTO submissions
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (parsed.fingerprint, parsed.title, parsed.venue, parsed.manuscript_id,
-                 parsed.base_manuscript_id, parsed.status, parsed.role, parsed.topic,
-                 submitted, parsed.date),
-            )
-            count += 1
+            else:
+                payload = json.dumps(asdict(parsed), ensure_ascii=False)
+                db.execute(
+                    "INSERT OR REPLACE INTO messages VALUES (?, ?, ?, ?, ?, ?)",
+                    (uid, parsed.message_id, parsed.date, parsed.subject, parsed.sender, payload),
+                )
+                existing = db.execute("SELECT submitted_date FROM submissions WHERE fingerprint=?", (parsed.fingerprint,)).fetchone()
+                submitted = min(existing[0], parsed.date) if existing else parsed.date
+                db.execute(
+                    """INSERT OR REPLACE INTO submissions
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (parsed.fingerprint, parsed.title, parsed.venue, parsed.manuscript_id,
+                     parsed.base_manuscript_id, parsed.status, parsed.role, parsed.topic,
+                     submitted, parsed.date),
+                )
+                count += 1
+
+            if index % 25 == 0 or index == total:
+                db.commit()
+                elapsed = time.monotonic() - started
+                rate = index / elapsed if elapsed else 0
+                remaining = (total - index) / rate if rate else 0
+                print(
+                    f"Progress {index}/{total} ({index / total:.0%}) | "
+                    f"matched {count} | elapsed {elapsed / 60:.1f} min | "
+                    f"ETA {remaining / 60:.1f} min",
+                    flush=True,
+                )
         db.commit()
         return count
     finally:
