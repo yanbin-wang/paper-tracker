@@ -1,1 +1,92 @@
-[]
+[
+  {
+    "title": "Transformers in Protein Informatics: A Survey of Structure Prediction, Function Annotation, Interactions, and Drug Discovery",
+    "venue": "Engineering Applications of Artificial Intelligence",
+    "status": "submitted",
+    "role": "submitting author",
+    "topic": "Bioinformatics",
+    "submitted_month": "2026-07",
+    "updated_date": "2026-07-18"
+  },
+  {
+    "title": "From Alignment to Decision: Page-Matching Supervision and Consistency-Shaped Fusion for Phishing Detection",
+    "venue": "Pattern Recognition",
+    "status": "accepted",
+    "role": "submitting author",
+    "topic": "Security",
+    "submitted_month": "2026-07",
+    "updated_date": "2026-07-15"
+  },
+  {
+    "title": "An enriched transformer powered by knowledge graph for multi-task Ethereum fraud detection",
+    "venue": "Engineering Applications of Artificial Intelligence",
+    "status": "accepted",
+    "role": "submitting author",
+    "topic": "Security",
+    "submitted_month": "2026-07",
+    "updated_date": "2026-07-13"
+  },
+  {
+    "title": "IP-Augmented Multimodal Malicious URL Detection Via Token-Contrastive Representation Enhancement and Multigranularity Fusion",
+    "venue": "IEEE Transactions on Information Forensics and Security",
+    "status": "accepted",
+    "role": "submitting author",
+    "topic": "Security",
+    "submitted_month": "2026-07",
+    "updated_date": "2026-07-13"
+  },
+  {
+    "title": "Distilling Large Language Models into Lightweight Ethereum Phishing Detectors",
+    "venue": "Pattern Recognition",
+    "status": "submitted",
+    "role": "submitting author",
+    "topic": "Security",
+    "submitted_month": "2026-07",
+    "updated_date": "2026-07-12"
+  },
+  {
+    "title": "Overcoming the Low SNR Challenge: Aligning Multi-Scale Cross-Modal Features for Robust Malicious Webpage Detection",
+    "venue": "Information Sciences",
+    "status": "submitted",
+    "role": "submitting author",
+    "topic": "Security",
+    "submitted_month": "2026-07",
+    "updated_date": "2026-07-12"
+  },
+  {
+    "title": "SpaCLV: Graph-preserving contrastive variational learning for cross-slice spatial transcriptomics domain identification",
+    "venue": "Neural Networks",
+    "status": "submitted",
+    "role": "co-author",
+    "topic": "Bioinformatics",
+    "submitted_month": "2026-06",
+    "updated_date": "2026-07-11"
+  },
+  {
+    "title": "Beyond Fixed Fusion: Modality-Flexible Phishing Detection via Tri-Modal Coherence Learning and Uncertainty-Aware Distillation",
+    "venue": "IEEE Transactions on Information Forensics and Security",
+    "status": "submitted",
+    "role": "co-author",
+    "topic": "Security",
+    "submitted_month": "2026-07",
+    "updated_date": "2026-07-06"
+  },
+  {
+    "title": "SpaVCCA identifies spatial transcriptomics domains across slices by coupling Variational Autoencoder with Canonical Correlation Analysis",
+    "venue": "Journal of Chemical Information and Modeling",
+    "status": "under review",
+    "role": "submitting author",
+    "topic": "Bioinformatics",
+    "submitted_month": "2026-07",
+    "updated_date": "2026-07-05"
+  },
+  {
+    "title": "Community-aware Directional Temporal Graph Encoding for Ethereum Fraud Detection",
+    "venue": "Pattern Recognition",
+    "status": "accepted",
+    "role": "submitting author",
+    "topic": "Security",
+    "submitted_month": "2026-06",
+    "updated_date": "2026-06-21"
+  }
+]
