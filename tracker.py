@@ -272,7 +272,7 @@ def scan(cfg: dict) -> int:
         if last_uid:
             criterion = f"UID {last_uid + 1}:*"
         else:
-            lookback_days = int(cfg["mail"].get("lookback_days", 180))
+            lookback_days = int(cfg["mail"].get("lookback_days", 30))
             since = dt.date.today() - dt.timedelta(days=lookback_days)
             criterion = f'SINCE "{since.strftime("%d-%b-%Y")}"'
             print(f"First scan: checking INBOX messages from {since} onward ({lookback_days} days).", flush=True)
