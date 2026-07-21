@@ -4,7 +4,7 @@
     "port": 993,
     "username": "wangyanbin15@mails.ucas.ac.cn",
     "mailbox": "INBOX",
-    "lookback_days": 180,
+    "lookback_days": 30,
     "keychain_service": "cstnet-paper-tracker"
   },
   "public": {
