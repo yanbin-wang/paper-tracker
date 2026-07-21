@@ -24,6 +24,12 @@ class TrackerTests(unittest.TestCase):
     def test_revision_suffix(self):
         self.assertEqual(base_id("EAAI-D-26-9280R2"), "EAAI-D-26-9280")
 
+    def test_malformed_message_id_does_not_abort_scan(self):
+        raw = b"""From: Microsoft Notifications <notify@microsoft.com>\nDate: Sun, 12 Jul 2026 02:05:32 +0800\nSubject: Confirming your submission\nMessage-ID: [broken-id@microsoft.com]>\nContent-Type: text/plain; charset=utf-8\n\nJournal: Bioinformatics\nTitle: Reliable Protein Function Prediction with Transformers\nManuscript Number: BIOINF-D-26-01234\nThank you for submitting.\n"""
+        result = parse_message(3, raw)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.message_id, "[broken-id@microsoft.com]>")
+
 
 if __name__ == "__main__":
     unittest.main()
