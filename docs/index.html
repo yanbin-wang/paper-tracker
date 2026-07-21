@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Research submission tracker for Yanbin Wang">
+  <title>Yanbin Wang · Submission Tracker</title>
+  <style>
+    :root{--ink:#12212f;--muted:#657382;--paper:#f5f2eb;--card:#fff;--line:#d9d4c8;--accent:#0d6671;--warm:#bd6b3d}
+    *{box-sizing:border-box}body{margin:0;color:var(--ink);background:linear-gradient(135deg,#eef5f4 0,#f8f3ea 56%,#efe8dc 100%);font:16px/1.55 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
+    header,main{width:min(1080px,calc(100% - 32px));margin:auto}header{padding:72px 0 30px}h1{font:700 clamp(2.25rem,7vw,5.5rem)/.95 Georgia,serif;letter-spacing:-.045em;margin:0;max-width:850px}.kicker{color:var(--accent);font-weight:750;letter-spacing:.15em;text-transform:uppercase}.lede{color:var(--muted);font-size:1.1rem;max-width:700px}.stats{display:flex;gap:10px;flex-wrap:wrap;margin:28px 0}.stat,.filter{border:1px solid var(--line);background:rgba(255,255,255,.72);border-radius:999px;padding:8px 14px}.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 26px}.filter{cursor:pointer;color:var(--ink)}.filter.active{background:var(--ink);color:white}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:16px;padding-bottom:80px}.card{background:rgba(255,255,255,.88);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 12px 35px rgba(45,55,54,.07)}.card h2{font:700 1.25rem/1.32 Georgia,serif;margin:6px 0 14px}.meta{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:.88rem}.tag{color:var(--accent);font-weight:700}.status{color:var(--warm);text-transform:capitalize}footer{color:var(--muted);padding:0 0 48px;font-size:.88rem}@media(max-width:520px){header{padding-top:44px}.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="kicker">Research in motion</div>
+    <h1>Submission tracker</h1>
+    <p class="lede">A privacy-safe public view of selected manuscripts by Yanbin Wang. Email addresses, manuscript IDs, reviews, and editorial correspondence remain private.</p>
+    <div class="stats" id="stats"></div>
+  </header>
+  <main>
+    <div class="toolbar" id="filters"></div>
+    <section class="grid" id="grid" aria-live="polite"></section>
+    <footer>Automatically generated from a local, read-only mailbox index. Last public update: <span id="updated">—</span>.</footer>
+  </main>
+  <script>
+    const grid=document.querySelector('#grid'),filters=document.querySelector('#filters'),stats=document.querySelector('#stats');let data=[],active='All';
+    const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+    function render(){const shown=active==='All'?data:data.filter(x=>x.topic===active);grid.innerHTML=shown.map(x=>`<article class="card"><div class="meta"><span class="tag">${esc(x.topic)}</span><span class="status">${esc(x.status)}</span></div><h2>${esc(x.title)}</h2><div class="meta"><span>${esc(x.venue)}</span><span>${esc(x.submitted_month)}</span></div></article>`).join('')||'<p>No public records yet.</p>';document.querySelectorAll('.filter').forEach(b=>b.classList.toggle('active',b.dataset.topic===active));}
+    fetch('./data.json',{cache:'no-store'}).then(r=>r.json()).then(rows=>{data=rows;const topics=['All',...new Set(data.map(x=>x.topic))];filters.innerHTML=topics.map(t=>`<button class="filter" data-topic="${esc(t)}">${esc(t)}</button>`).join('');filters.onclick=e=>{if(e.target.dataset.topic){active=e.target.dataset.topic;render()}};stats.innerHTML=`<span class="stat"><b>${data.length}</b> public manuscripts</span><span class="stat"><b>${new Set(data.map(x=>x.venue)).size}</b> venues</span>`;document.querySelector('#updated').textContent=data[0]?.updated_date||'—';render()}).catch(()=>{grid.innerHTML='<p>Public data has not been generated yet.</p>'});
+  </script>
+</body>
+</html>
+
